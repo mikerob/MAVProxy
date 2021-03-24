@@ -30,8 +30,8 @@ class ERSModule(mp_module.MPModule):
         #self.ERS_console = ersconsole.ERSConsole(title='ERS Console')
         self.ERS_console = ersconsole.ERSConsole(title='ERS Console')
         # setup some default status information
-        self.ERS_console.set_status('Button', 'NONE', bg='orange')
         self.ERS_console.set_status('Mode', 'UNKNOWN', row=0, fg='blue')
+        self.ERS_console.set_status('Kill', 'UNKNOWN', row=0, fg='blue')
         self.ERS_console.set_status('ARM', 'ARM', fg='grey', row=0)
         self.ERS_console.set_status('GPS', 'GPS: --', fg='red', row=0)
         self.ERS_console.set_status('Vcc', 'Vcc: --', fg='red', row=0)
@@ -59,6 +59,7 @@ class ERSModule(mp_module.MPModule):
         #self.ERS_console.set_status('AspdError', 'AspdError --', row=3)
         self.ERS_console.set_status('FlightTime', 'FlightTime --', row=3)
         self.ERS_console.set_status('ETR', 'ETR --', row=3)
+        self.ERS_console.set_status('Button', 'NONE', row=3, bg='orange')
 
         self.ERS_console.ElevationMap = mp_elevation.ElevationModel()
 
@@ -102,27 +103,42 @@ class ERSModule(mp_module.MPModule):
                 self.master.mav.command_long_send(self.target_system,  # target_system
                                                 self.target_component,
                                                 mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED, # command
+                                                0, # confirmation                                                
                                                 1, # ground speed
                                                 0, # speed (m/s)
                                                 0, # throttle
                                                 0, # absolute
-                                                0, 0, 0, 0) # Empty                
+                                                0, 0, 0) # Empty                
             elif type == ers_util.EM_K_KILL:
                 self.ERS_console.set_status('Button', 'KILL', bg='red')
                 self.master.mav.command_long_send(self.target_system,
                                                    self.target_component,
-                                                   mavutil.mavlink.MAV_CMD_DO_SET_SERVO, 0,
-                                                   7, # servo number
-                                                   ers_util.EPWM_K_KILL, # value
-                                                   0, 0, 0, 0, 0)
+                                                   mavutil.mavlink.MAV_CMD_DO_ENGINE_CONTROL,
+                                                   0, # confirmation                                                   
+                                                   0, # stop engine
+                                                   0, # warm (0) / cold (1) start
+                                                   0, # height delay
+                                                   0, 0, 0, 0)                                   
+            elif type == ers_util.EM_K_START:
+                self.ERS_console.set_status('Button', 'START', bg='green')
+                self.master.mav.command_long_send(self.target_system,
+                                                   self.target_component,
+                                                   mavutil.mavlink.MAV_CMD_DO_ENGINE_CONTROL, 
+                                                   0, # confirmation
+                                                   1, # start engine
+                                                   0, # warm (0) / cold (1) start
+                                                   0, # height delay
+                                                   0, 0, 0, 0)    
             elif type == ers_util.EM_K_RUN:
                 self.ERS_console.set_status('Button', 'RUN', bg='green')
                 self.master.mav.command_long_send(self.target_system,
                                                    self.target_component,
-                                                   mavutil.mavlink.MAV_CMD_DO_SET_SERVO, 0,
-                                                   7, # servo number
-                                                   ers_util.EPWM_K_RUN, # value
-                                                   0, 0, 0, 0, 0)
+                                                   mavutil.mavlink.MAV_CMD_DO_ENGINE_CONTROL, 
+                                                   0, # confirmation                                                   
+                                                   2, # ignition on
+                                                   0, # warm (0) / cold (1) start
+                                                   0, # height delay
+                                                   0, 0, 0, 0)                                    
             elif type == ers_util.EM_A_ARM:
                 self.ERS_console.set_status('Button', 'ARM', bg='green')                     
                 self.master.mav.command_long_send(self.target_system,  # target_system
@@ -131,7 +147,7 @@ class ERSModule(mp_module.MPModule):
                                                 0, # confirmation
                                                 1, # param1 (1 to indicate arm)
                                                 0, # param2  (all other params meaningless)
-                                                0, 0, 0, 0, 0) # param7
+                                                0, 0, 0, 0, 0) # param7                                                
             elif type == ers_util.EM_A_DISARM:
                 self.ERS_console.set_status('Button', 'DISARM', bg='red')
                 self.master.mav.command_long_send(self.target_system,  # target_system
@@ -200,7 +216,7 @@ class ERSModule(mp_module.MPModule):
         fg = 'black' # default
         master = self.master
         # add some status fields
-        if type in [ 'GPS_RAW', 'GPS_RAW_INT' ]:
+        if type in [ 'GPS_RAW', 'GPS_RAW_INT' ]:    # GPS
             if type == "GPS_RAW":
                 num_sats1 = master.field('GPS_STATUS', 'satellites_visible', 0)
             else:
@@ -223,8 +239,9 @@ class ERSModule(mp_module.MPModule):
                 gps_heading = int(self.mpstate.status.msgs['GPS_RAW_INT'].cog * 0.01)
             else:
                 gps_heading = self.mpstate.status.msgs['GPS_RAW'].hdg
-            self.ERS_console.set_status('Heading', 'Hdg %s/%u' % (master.field('VFR_HUD', 'heading', '-'), gps_heading))
-        elif type == 'VFR_HUD':
+            self.ERS_console.set_status('Heading', 'Hdg: %s/%u' % (master.field('VFR_HUD', 'heading', '-'), gps_heading))
+            self.ERS_console.set_status('HAcc', 'HAcc: %.1f' % msg.h_acc)
+        elif type == 'VFR_HUD':                     # HUD
             if master.mavlink10():
                 alt = master.field('GPS_RAW_INT', 'alt', 0) / 1.0e3
             else:
@@ -261,11 +278,11 @@ class ERSModule(mp_module.MPModule):
                     vehicle_agl = '---'
                 else:
                     vehicle_agl = self.height_string(vehicle_agl)
-                self.ERS_console.set_status('AGL', 'AGL %s/%s' % (self.height_string(agl_alt), vehicle_agl))
-            self.ERS_console.set_status('Alt', 'Alt %s' % self.height_string(rel_alt))
+                self.ERS_console.set_status('AGL', 'AGL: %s/%s' % (self.height_string(agl_alt), vehicle_agl))
+            self.ERS_console.set_status('Alt', 'Alt: %s' % self.height_string(rel_alt))
             #self.ERS_console.set_status('AirSpeed', 'AirSpeed %s' % self.speed_string(msg.airspeed))
-            self.ERS_console.set_status('GPSSpeed', 'GPSSpeed %s' % self.speed_string(msg.groundspeed))
-            self.ERS_console.set_status('Thr', 'Thr %u %u' % (msg.throttle, master.field('SERVO_OUTPUT_RAW', 'servo3_raw', None)))
+            self.ERS_console.set_status('GPSSpeed', 'GPSSpeed: %s' % self.speed_string(msg.groundspeed))
+            self.ERS_console.set_status('Thr', 'Thr %u %% %u' % (msg.throttle, master.field('SERVO_OUTPUT_RAW', 'servo3_raw', None)))
             t = time.localtime(msg._timestamp)
             flying = False
             if self.mpstate.vehicle_type == 'copter':
@@ -282,10 +299,10 @@ class ERSModule(mp_module.MPModule):
                 self.in_air = False
                 self.total_time = time.mktime(t) - self.start_time
                 self.ERS_console.set_status('FlightTime', 'FlightTime %u:%02u' % (int(self.total_time)/60, int(self.total_time)%60))
-        elif type == 'ATTITUDE':
-            self.ERS_console.set_status('Roll', 'Roll %u' % math.degrees(msg.roll))
-            self.ERS_console.set_status('Pitch', 'Pitch %u' % math.degrees(msg.pitch))
-        elif type in ['SYS_STATUS']:
+        elif type == 'ATTITUDE':                # ATTITUDE
+            self.ERS_console.set_status('Roll', 'Roll: %u' % math.degrees(msg.roll))
+            self.ERS_console.set_status('Pitch', 'Pitch: %u' % math.degrees(msg.pitch))
+        elif type in ['SYS_STATUS']:            # SYS STATUS
             sensors = { 'AS'   : mavutil.mavlink.MAV_SYS_STATUS_SENSOR_DIFFERENTIAL_PRESSURE,
                         'MAG'  : mavutil.mavlink.MAV_SYS_STATUS_SENSOR_3D_MAG,
                         'INS'  : mavutil.mavlink.MAV_SYS_STATUS_SENSOR_3D_ACCEL | mavutil.mavlink.MAV_SYS_STATUS_SENSOR_3D_GYRO,
@@ -324,10 +341,10 @@ class ERSModule(mp_module.MPModule):
                     self.say("%s fail" % s)
             self.last_sys_status_health = msg.onboard_control_sensors_health
 
-        elif type == 'WIND':
-            self.ERS_console.set_status('Wind', 'Wind %u/%.2f' % (msg.direction, msg.speed))
+        elif type == 'WIND':                 # WIND   
+            self.ERS_console.set_status('Wind', 'Wind: %u/%.2f' % (msg.direction, msg.speed))
 
-        elif type == 'EKF_STATUS_REPORT':
+        elif type == 'EKF_STATUS_REPORT':   # EKF STATUS
             highest = 0.0
             vars = ['velocity_variance',
                     'pos_horiz_variance',
@@ -345,13 +362,13 @@ class ERSModule(mp_module.MPModule):
                 bg = 'green'
             self.ERS_console.set_status('EKF', 'EKF', fg=fg, bg=bg)
 
-        elif type == 'HWSTATUS':
+        elif type == 'HWSTATUS':            # HW STATUS
             if msg.Vcc >= 4600 and msg.Vcc <= 5300:
                 fg = 'green'
             else:
                 fg = 'red'
-            self.ERS_console.set_status('Vcc', 'Vcc %.2f' % (msg.Vcc * 0.001), fg=fg)
-        elif type == 'POWER_STATUS':
+            self.ERS_console.set_status('Vcc', 'Vcc: %.2f' % (msg.Vcc * 0.001), fg=fg)
+        elif type == 'POWER_STATUS':        # POWER STATUS
             if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_CHANGED:
                 fg = 'red'
             else:
@@ -368,20 +385,21 @@ class ERSModule(mp_module.MPModule):
             if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_PERIPH_HIPOWER_OVERCURRENT:
                 status += 'O2'
             self.ERS_console.set_status('PWR', status, fg=fg)
-            self.ERS_console.set_status('Srv', 'Srv %.2f' % (msg.Vservo*0.001), fg='green')
-        elif type in ['RADIO', 'RADIO_STATUS']:
+            self.ERS_console.set_status('Srv', 'Srv: %.2f' % (msg.Vservo*0.001), fg='green')
+        elif type in ['RADIO', 'RADIO_STATUS']:# RADIO
             if msg.rssi < msg.noise+10 or msg.remrssi < msg.remnoise+10:
                 bg = 'red'
             elif msg.rssi < msg.noise+30 or msg.remrssi < msg.remnoise+30:
                 bg = 'yellow'
             else:
                 bg = 'white'
-            self.ERS_console.set_status('Radio', 'Radio %u/%u %u/%u' % (msg.rssi, msg.noise, msg.remrssi, msg.remnoise), fg=fg, bg=bg)
-        elif type == 'HEARTBEAT':
+            self.ERS_console.set_status('Radio', 'Radio: %u/%u %u/%u' % (msg.rssi, msg.noise, msg.remrssi, msg.remnoise), fg=fg, bg=bg)
+        elif type == 'HEARTBEAT':           # HEARTBEAT - MODE and ARM
             fmode = master.flightmode
             if self.settings.vehicle_name:
                 fmode = self.settings.vehicle_name + ':' + fmode
             self.ERS_console.set_status('Mode', '%s' % fmode, fg='blue')
+            
             armstring = 'UNKNOWN'
             if self.master.motors_armed():
                 arm_colour = 'green'
@@ -400,7 +418,7 @@ class ERSModule(mp_module.MPModule):
                 self.max_link_num = len(self.mpstate.mav_master)
             for m in self.mpstate.mav_master:
                 linkdelay = (self.mpstate.status.highest_msec - m.highest_msec)*1.0e-3
-                linkline = "Link %s " % (self.link_label(m))
+                linkline = "Link %s: " % (self.link_label(m))
                 #fg = 'dark green'
                 if m.linkerror:
                     linkline += "down"
@@ -448,7 +466,7 @@ class ERSModule(mp_module.MPModule):
                 wpmax = "/%u" % wpmax
             else:
                 wpmax = ""
-            self.ERS_console.set_status('WP', 'WP %u%s' % (msg.seq, wpmax))
+            self.ERS_console.set_status('WP', 'WP: %u%s' % (msg.seq, wpmax))
             lat = master.field('GLOBAL_POSITION_INT', 'lat', 0) * 1.0e-7
             lng = master.field('GLOBAL_POSITION_INT', 'lon', 0) * 1.0e-7
             if lat != 0 and lng != 0:
@@ -459,7 +477,7 @@ class ERSModule(mp_module.MPModule):
                     self.speed = 0.98*self.speed + 0.02*airspeed
                 self.speed = max(1, self.speed)
                 time_remaining = int(self.estimated_time_remaining(lat, lng, msg.seq, self.speed))
-                self.ERS_console.set_status('ETR', 'ETR %u:%02u' % (time_remaining/60, time_remaining%60))
+                self.ERS_console.set_status('ETR', 'ETR: %u:%02u' % (time_remaining/60, time_remaining%60))
 
         elif type == 'NAV_CONTROLLER_OUTPUT':
             self.ERS_console.set_status('WPDist', 'Distance %s' % self.dist_string(msg.wp_dist))
@@ -478,12 +496,24 @@ class ERSModule(mp_module.MPModule):
                 alt_error = "%d%s" % (msg.alt_error, alt_error_sign)
             #self.ERS_console.set_status('AltError', 'AltError %s' % alt_error)
             #self.ERS_console.set_status('AspdError', 'AspdError %.1f%s' % (msg.aspd_error*0.01, aspd_error_sign))
+            self.ERS_console.set_status('Xtrack', 'Xtrack: %.1f' % msg.xtrack_error)
         elif type == 'SERVO_OUTPUT_RAW':
             steer_servo=msg.servo4_raw
-            self.ERS_console.set_status('Steer', 'Steer %u' % steer_servo)
+            self.ERS_console.set_status('Steer', 'Steer: %u' % steer_servo)
             
-            kill_servo=msg.servo7_raw
+            kill_servo=int(msg.servo7_raw) # ERC_INGITION
             self.ERS_console.set_status('KillPWM', '%u' % kill_servo)
+            
+            starter_servo=int(msg.servo8_raw) # ERC_STARTER
+            self.ERS_console.set_status('StartPWM', '%u' % starter_servo)
+
+            if (kill_servo == ers_util.EPWM_K_KILL):
+                self.ERS_console.set_status('Kill', 'KILL')
+            elif (kill_servo == ers_util.EPWM_K_RUN & starter_servo == ers_util.EPWM_K_RUN):
+                self.ERS_console.set_status('Kill', 'START')
+            elif (kill_servo == ers_util.EPWM_K_RUN):
+                self.ERS_console.set_status('Kill', 'RUN')
+
         elif type == 'COMMAND_ACK':
             ack_cmd=msg.command
             ack_stat=msg.result

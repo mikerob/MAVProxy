@@ -18,7 +18,7 @@ class ERSFrame(wx.Frame):
         self.panel = wx.Panel(self)
         state.frame = self
 
-        # initial values
+        # initial values - has a kill / run / start command been sent (Cmd) and has it been executed (stat)
         self.ERSKillCmd = 'NONE'
         self.ERSKillStat = 'NONE'
         self.ERSModeCmd = 'NONE'
@@ -85,10 +85,16 @@ class ERSFrame(wx.Frame):
         # Kill engine controls
         self.killSizer = wx.BoxSizer(wx.HORIZONTAL)
         self.K_KillBtn = wx.Button(self.panel, wx.ID_ANY, "&KILL")
-        self.K_RunBtn = wx.Button(self.panel, wx.ID_ANY, "RUN")
-        self.killSizer.Add(self.K_KillBtn, 2, wx.ALL|wx.EXPAND,2)
-        self.killSizer.Add(self.K_RunBtn, 1, wx.ALL|wx.EXPAND,2)
+        self.killSizer.Add(self.K_KillBtn, 2, wx.ALL|wx.EXPAND,2)  
         self.Bind(wx.EVT_BUTTON, self.OnKill, self.K_KillBtn)
+
+        # Run / Start engine controls
+        self.engSizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.K_StartBtn = wx.Button(self.panel, wx.ID_ANY, "&START")
+        self.engSizer.Add(self.K_StartBtn, 1, wx.ALL|wx.EXPAND,1)  
+        self.Bind(wx.EVT_BUTTON, self.OnStart, self.K_StartBtn)
+        self.K_RunBtn = wx.Button(self.panel, wx.ID_ANY, "RUN")
+        self.engSizer.Add(self.K_RunBtn, 1, wx.ALL|wx.EXPAND,2)
         self.Bind(wx.EVT_BUTTON, self.OnRun, self.K_RunBtn)
 
         # Enables addressing by name string
@@ -98,6 +104,7 @@ class ERSFrame(wx.Frame):
                         'ACRO'  : self.M_AcroBtn,
                         'STOP'  : self.M_StopBtn,
                         'KILL'  : self.K_KillBtn,
+                        'START' : self.K_StartBtn,
                         'RUN'   : self.K_RunBtn,
                         'ARM'   : self.A_ArmBtn,
                         'DISARM': self.A_DisarmBtn}
@@ -155,17 +162,21 @@ class ERSFrame(wx.Frame):
         self.selfGrid.AddGrowableCol(1,1)
         
         # Status Row 1
-        thisrow=1
+        thisrow=thisrow+1
         self.s_GPS = wx.StaticText(self.panel, label="GPS --", style=wx.ALIGN_CENTRE_HORIZONTAL)
         self.selfGrid.Add(self.s_GPS, pos=(thisrow,0), flag=wx.EXPAND|wx.ALL|wx.CENTER,)
         self.values['GPS']=self.s_GPS
         
-        self.s_HAcc = wx.StaticText(self.panel, label="HAcc: ", style=wx.ALIGN_CENTRE_HORIZONTAL)
-        self.selfGrid.Add(self.s_HAcc, pos=(thisrow,1),flag=wx.EXPAND|wx.ALL|wx.CENTER)
-        self.values['HAcc']=self.s_HAcc
-
+        self.startPWMSizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.s_startLabel = wx.StaticText(self.panel, label="Start PWM:", style=wx.ALIGN_CENTRE_HORIZONTAL)
+        self.startPWMSizer.Add(self.s_startLabel, 0, flag=wx.EXPAND|wx.ALL)
+        self.s_startPWM = wx.StaticText(self.panel, label="0000", style=wx.ALIGN_CENTRE_HORIZONTAL)
+        self.startPWMSizer.Add(self.s_startPWM, 1, flag=wx.EXPAND|wx.ALL)
+        self.selfGrid.Add(self.startPWMSizer, pos=(thisrow,1), flag=wx.EXPAND|wx.ALL|wx.CENTER)
+        self.values['StartPWM']=self.s_startPWM
+        
         # Status Row 2
-        thisrow=2
+        thisrow=thisrow+1
         self.s_speed = wx.StaticText(self.panel, label="Speed ---", style=wx.ALIGN_CENTRE_HORIZONTAL)
         self.selfGrid.Add(self.s_speed, pos=(thisrow,0), flag=wx.EXPAND|wx.ALL|wx.CENTER)
         self.values['GPSSpeed']=self.s_speed
@@ -175,7 +186,17 @@ class ERSFrame(wx.Frame):
         self.values['Xtrack']=self.s_xtrack
         
         # Status Row 3
-        thisrow = 3
+        thisrow=thisrow+1
+        self.s_radio = wx.StaticText(self.panel, label="Radio ---", style=wx.ALIGN_CENTRE_HORIZONTAL)
+        self.selfGrid.Add(self.s_radio, pos=(thisrow,0), flag=wx.EXPAND|wx.ALL|wx.CENTER)
+        self.values['Radio']=self.s_radio
+        
+        self.s_HAcc = wx.StaticText(self.panel, label="HAcc: ", style=wx.ALIGN_CENTRE_HORIZONTAL)
+        self.selfGrid.Add(self.s_HAcc, pos=(thisrow,1),flag=wx.EXPAND|wx.ALL|wx.CENTER)
+        self.values['HAcc']=self.s_HAcc
+        
+        # Status Row 4
+        thisrow=thisrow+1
         self.s_link1 = wx.StaticText(self.panel, label="Link1 ---", style=wx.ALIGN_CENTRE_HORIZONTAL)
         self.selfGrid.Add(self.s_link1, pos=(thisrow,0), flag=wx.EXPAND|wx.ALL|wx.CENTER)
         self.values['Link0']=self.s_link1
@@ -186,18 +207,8 @@ class ERSFrame(wx.Frame):
         self.selfGrid.Add(self.s_link2, pos=(thisrow,1), flag=wx.EXPAND|wx.ALL|wx.CENTER)
         self.values['Link1']=self.s_link2
         
-        # Status Row 4
-        thisrow = 4
-        self.s_radio = wx.StaticText(self.panel, label="Radio ---", style=wx.ALIGN_CENTRE_HORIZONTAL)
-        self.selfGrid.Add(self.s_radio, pos=(thisrow,0), flag=wx.EXPAND|wx.ALL|wx.CENTER)
-        self.values['Radio']=self.s_radio
-        
-        #self.s_link2 = wx.StaticText(self.panel, label="Link2 ---", style=wx.ALIGN_CENTRE_HORIZONTAL)
-        #self.selfGrid.Add(self.s_link2, pos=(thisrow,1), flag=wx.EXPAND|wx.ALL|wx.CENTER)
-        #self.values['Link2']=self.s_link2
-        
         # Status Row 5
-        thisrow = 5
+        thisrow=thisrow+1
         self.s_thr = wx.StaticText(self.panel, label="Thr ---", style=wx.ALIGN_CENTRE_HORIZONTAL)
         self.selfGrid.Add(self.s_thr, pos=(thisrow,0), flag=wx.EXPAND|wx.ALL|wx.CENTER)
         self.values['Thr']=self.s_thr
@@ -215,6 +226,7 @@ class ERSFrame(wx.Frame):
         self.mainSizer.Add(self.killSizer,3,wx.ALL|wx.EXPAND,1)
         self.mainSizer.Add(self.stopSizer,3,wx.ALL|wx.EXPAND,1)
         self.mainSizer.Add(self.modeSizer,1,wx.ALL|wx.EXPAND,1)
+        self.mainSizer.Add(self.engSizer,1,wx.ALL|wx.EXPAND,1)
         self.mainSizer.Add(self.armSizer,1,wx.ALL|wx.EXPAND,1)
 
         self.mainSizer.Add(self.statLine,0, wx.ALL|wx.EXPAND,5)
@@ -274,7 +286,7 @@ class ERSFrame(wx.Frame):
                 self.btnsDict[cmd].SetBackgroundColour((255,0,0))
                 self.ERSArmCmd = cmd
 
-    def UpdateKill(self, stat='XXXX', cmd='XXXX'):
+    def UpdateKill(self, stat='XXXX', cmd='XXXX'): # UPDATE
         # If stat has been set, then update button color to green
         if not stat == 'XXXX': # Kill status change
             if not self.ERSKillStat == 'NONE':
@@ -284,13 +296,14 @@ class ERSFrame(wx.Frame):
                 self.ERSKillStat = stat
                 if self.ERSKillStat == self.ERSKillCmd:
                     self.ERSKillCmd = 'NONE'
-        if not cmd == 'XXXX': # Commanded Arm change
+        if not cmd == 'XXXX': # Commanded Kill change
             if not self.ERSKillCmd == 'NONE':
                 self.btnsDict[self.ERSKillCmd].SetBackgroundColour(wx.NullColour)
             if cmd in self.btnsDict:
                 self.btnsDict[cmd].SetBackgroundColour((255,0,0))
                 self.ERSKillCmd = cmd
-                
+
+    # Callbacks defined on creation of button, set up msg for menu_callback in mavproxy_ers.py                
     def OnHold(self,event):
         #wx.MessageBox("MODE HOLD")
         msg = ERSMessage(type=ers_util.EM_M_HOLD, text='HOLD')
@@ -331,21 +344,20 @@ class ERSFrame(wx.Frame):
         self.UpdateMode()
         self.UpdateArm(cmd='DISARM')
         
-    def OnKill(self,event):
+    def OnKill(self,event): # UPDATE
         msg = ERSMessage(type=ers_util.EM_K_KILL, text=str(ers_util.EPWM_K_KILL))
         self.send_message(msg)
         self.UpdateKill(cmd='KILL')
-        #self.killStatus=ers_util.EPWM_K_KILL
-        #self.K_KillBtn.SetBackgroundColour((0,255,0))
-        #self.K_RunBtn.SetBackgroundColour(wx.NullColour)
+
+    def OnStart(self,event): # UPDATE
+        msg = ERSMessage(type=ers_util.EM_K_START, text='START')
+        self.send_message(msg)
+        self.UpdateKill(cmd='START')
         
-    def OnRun(self,event):
+    def OnRun(self,event): # UPDATE
         msg = ERSMessage(type=ers_util.EM_K_RUN, text=str(ers_util.EPWM_K_RUN))
         self.send_message(msg)
         self.UpdateKill(cmd='RUN')
-        #self.killStatus=ers_util.EPWM_K_RUN
-        #self.K_KillBtn.SetBackgroundColour(wx.NullColour)
-        #self.K_RunBtn.SetBackgroundColour((0,255,0))
         
     def send_message(self, msg):
         state = self.state
@@ -387,6 +399,7 @@ class ERSFrame(wx.Frame):
     def on_idle(self, event):
         time.sleep(0.05)
 
+    # Timer function to check ACTUAL vehicle status and update UI elements as required - confirmation that ARM etc have occurred
     # How often does the timer run ??
     # Use this to machine gun HOLD and KILL
     def on_timer(self, event):
@@ -395,7 +408,7 @@ class ERSFrame(wx.Frame):
             self.timer.Stop()
             self.Destroy()
             return
-        # If we're still trying to change to HOLD mode, Disar, Kill or Stop, send another message
+        # If we're still trying to change to HOLD mode, Disarm, Kill or Stop, send another message
         if self.ERSModeCmd == 'HOLD':
             msg = ERSMessage(type=ers_util.EM_M_HOLD, text='HOLD')
             self.send_message(msg)
@@ -405,11 +418,11 @@ class ERSFrame(wx.Frame):
         if self.ERSArmCmd == 'DISARM':
             msg = ERSMessage(type=ers_util.EM_A_DISARM, text='DISARM')
             self.send_message(msg)
-        if self.ERSKillCmd == 'KILL':
+        if self.ERSKillCmd == 'KILL': 
             msg = ERSMessage(type=ers_util.EM_K_KILL, text='KILL')
             self.send_message(msg)
         
-      
+        # Copied from wxconsole_ui.py
         while state.child_pipe_recv.poll():
             obj = state.child_pipe_recv.recv()
             if isinstance(obj, Value):
@@ -431,18 +444,13 @@ class ERSFrame(wx.Frame):
                 value.SetLabel(obj.text)
                 # If it's a MODE message and it's a change from current, or there's an outstanding command
                 # Last condition is required in case the mode change comes in too quickly
-                #### DOES THIS CATCH EXTERNALLY TTRIGGERED MODE CHANGES ??? ###
                 if (obj.name == 'Mode' and (not obj.text == self.ERSModeStat or not self.ERSModeCmd =='NONE')):
                     self.UpdateMode(stat=obj.text)
                 # Update Arm status
                 if (obj.name == 'ARM' and (not obj.text == self.ERSArmStat or not self.ERSArmCmd == 'NONE')):
                     self.UpdateArm(stat=obj.text)
-                # Update Kill status
-                if (obj.name == 'KillPWM'):
-                    if (int(obj.text) == ers_util.EPWM_K_KILL):
-                        self.UpdateKill(stat = 'KILL')
-                    if (int(obj.text) == ers_util.EPWM_K_RUN):
-                        self.UpdateKill(stat = 'RUN')
+                if (obj.name == 'Kill' and (not obj.text == self.ERSKillStat or not self.ERSKillCmd =='NONE')):
+                    self.UpdateKill(stat=obj.text)
                 if (obj.name == 'ACK'): # If we got an ACK packet showing success
                     # And it's for a change speed command and we were trying to change speed
                     if (int(obj.text) == mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED and self.ERSModeCmd == 'STOP'):
